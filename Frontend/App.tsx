@@ -1,3 +1,4 @@
+// complete front end working code
 import React, { useState } from 'react';
 import { 
   View, 
@@ -19,7 +20,7 @@ import axios from 'axios';
 import { Picker } from '@react-native-picker/picker';
 import Icon from 'react-native-vector-icons/FontAwesome';
 
-const API_URL = 'http://127.0.0.1:8000';
+const API_URL = 'http://10.0.2.2:8000';
 
 type StepNavigationProps = {
   activeStep: number;
@@ -27,7 +28,7 @@ type StepNavigationProps = {
 };
 
 type StepProps = {
-  onNext?: (results: any) => void;
+  onNext?: () => void;
   onPrevious?: () => void;
   image?: string | null;
   extractedData?: any;
@@ -44,9 +45,6 @@ type StepProps = {
   };
   handleInputChange?: (name: string, value: string) => void;
 };
-
-
-
 
 const App: React.FC = () => {
   const [inputs, setInputs] = useState({
@@ -100,6 +98,39 @@ const App: React.FC = () => {
       setExtractedData(null);
     }
   };
+
+  const uploadImage = async () => {
+    if (!image) {
+      Alert.alert('Error', 'Please select or take a picture first');
+      return false;
+    }
+
+    setLoading(true);
+    
+    try {
+      const response = await fetch(image);
+      const blob = await response.blob();
+
+      const formData = new FormData();
+      formData.append('image', blob, 'uploaded_image.jpg');
+
+      const res = await axios.post(`${API_URL}/process-image`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      setExtractedData(res.data);
+      return true;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      Alert.alert('Error', 'Failed to process image');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleNextStep = async () => {
     setActiveStep(activeStep + 1);
     
@@ -213,8 +244,6 @@ const Step1: React.FC<StepProps> = ({
     op: boolean;
     pv: boolean;
   }>({ op: false, pv: false });
-  const [apiLoading, setApiLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const toggleDropdown = (type: 'op' | 'pv') => {
     setShowDropdown(prev => ({
@@ -228,79 +257,6 @@ const Step1: React.FC<StepProps> = ({
     setShowDropdown({ op: false, pv: false });
   };
 
-  const handleNext = async () => {
-    if (!image || !inputs) return;
-    
-    setApiLoading(true);
-    setError(null);
-    
-    try {
-      console.log('Starting image processing...');
-      
-      // Convert image URI to base64
-      const base64Image = await new Promise<string>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.onload = function() {
-          const reader = new FileReader();
-          reader.onloadend = function() {
-            resolve(reader.result as string);
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(xhr.response);
-        };
-        xhr.onerror = reject;
-        xhr.responseType = 'blob';
-        xhr.open('GET', image, true);
-        xhr.send(null);
-      });
-
-      // Prepare request payload
-      const payload = {
-        image: base64Image,
-        y_min: inputs.y_min,
-        y_max: inputs.y_max,
-        x_min: inputs.x_min,
-        x_max: inputs.x_max,
-        opColor: inputs.opColor,
-        pvColor: inputs.pvColor
-      };
-
-      console.log('Sending request to Django API...');
-      
-      // Make API call with axios
-      const response = await axios.post('http://127.0.0.1.125:8000/api/extract_data/', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        timeout: 30000,
-      });
-
-      console.log('API response received:', response.data);
-
-      if (response.data.status !== 'success') {
-        throw new Error(response.data.message || 'API request failed');
-      }
-
-      // Pass results to parent component
-      onNext?.(response.data.results);
-      
-    } catch (err) {
-      let errorMessage = 'An unknown error occurred';
-      
-      if (axios.isAxiosError(err)) {
-        console.error('Axios error:', err.response?.data || err.message);
-        errorMessage = err.response?.data?.message || err.message;
-      } else if (err instanceof Error) {
-        console.error('Processing error:', err.message);
-        errorMessage = err.message;
-      }
-      
-      setError(errorMessage);
-    } finally {
-      setApiLoading(false);
-    }
-  };
-
   const colorOptions = [
     { label: 'Red', value: 'red' },
     { label: 'Blue', value: 'blue' },
@@ -312,23 +268,21 @@ const Step1: React.FC<StepProps> = ({
       <View style={styles.stepContent}>
         <View style={styles.centerContent}>
           <View style={styles.imageButtonsContainer}>
-            <View style={styles.buttonGroup}>
-              <TouchableOpacity 
-                style={[styles.imageButton, (loading || apiLoading) && styles.disabledButton]}
-                onPress={() => pickImage?.('camera')}
-                disabled={loading || apiLoading}
-              >
-                <Text style={styles.buttonText}>Take Picture</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.imageButton, (loading || apiLoading) && styles.disabledButton]}
-                onPress={() => pickImage?.('gallery')}
-                disabled={loading || apiLoading}
-              >
-                <Text style={styles.buttonText}>Choose from Gallery</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity 
+              style={[styles.imageButton, loading && styles.disabledButton]}
+              onPress={() => pickImage?.('camera')}
+              disabled={loading}
+            >
+              <Text style={styles.buttonText}>Take Picture</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.imageButton, loading && styles.disabledButton]}
+              onPress={() => pickImage?.('gallery')}
+              disabled={loading}
+            >
+              <Text style={styles.buttonText}>Choose from Gallery</Text>
+            </TouchableOpacity>
           </View>
 
           {image ? (
@@ -390,6 +344,7 @@ const Step1: React.FC<StepProps> = ({
                   </View>
 
                   <View style={styles.compactColorPickersContainer}>
+                    {/* OP Color Dropdown */}
                     <View style={styles.colorDropdownWrapper}>
                       <Text style={styles.smallLabel}>OP Color:</Text>
                       <View style={styles.dropdownContainer}>
@@ -421,6 +376,7 @@ const Step1: React.FC<StepProps> = ({
                       </View>
                     </View>
 
+                    {/* PV Color Dropdown */}
                     <View style={styles.colorDropdownWrapper}>
                       <Text style={styles.smallLabel}>PV Color:</Text>
                       <View style={styles.dropdownContainer}>
@@ -460,28 +416,301 @@ const Step1: React.FC<StepProps> = ({
           )}
         </View>
         
-        {(loading || apiLoading) ? (
+        {loading ? (
           <ActivityIndicator size="small" style={styles.loadingIndicator} />
         ) : (
           image && (
-            <View style={styles.nextButtonContainer}>
-              {error && (
-                <Text style={styles.errorText}>
-                  Error: {error}
-                </Text>
-              )}
-              <TouchableOpacity 
-                style={[styles.nextButton, (!image || loading || apiLoading) && styles.disabledButton]} 
-                onPress={handleNext}
-                disabled={!image || loading || apiLoading}
-              >
-                <Text style={styles.buttonText}>NEXT</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity 
+              style={[styles.nextButton, (!image || loading) && styles.disabledButton]} 
+              onPress={onNext}
+              disabled={!image || loading}
+            >
+              <Text style={styles.buttonText}>NEXT</Text>
+            </TouchableOpacity>
           )
         )}
       </View>
     </ScrollView>
+  );
+};
+const Step2: React.FC<StepProps> = ({ 
+  onNext, 
+  onPrevious, 
+  extractedData, 
+  image,
+  inputs,
+  handleInputChange
+}) => {
+  const [showDropdown, setShowDropdown] = useState<{
+    op: boolean;
+    pv: boolean;
+    sp: boolean;
+  }>({ op: false, pv: false, sp: false });
+
+  const toggleDropdown = (type: 'op' | 'pv' | 'sp') => {
+    setShowDropdown(prev => ({
+      op: type === 'op' ? !prev.op : false,
+      pv: type === 'pv' ? !prev.pv : false,
+      sp: type === 'sp' ? !prev.sp : false,
+    }));
+  };
+
+  const handleColorSelect = (type: 'opColor' | 'pvColor' | 'spColor', value: string) => {
+    handleInputChange?.(type, value);
+    setShowDropdown({ op: false, pv: false, sp: false });
+  };
+
+  const colorOptions = [
+    { label: 'Red', value: 'red' },
+    { label: 'Blue', value: 'blue' },
+    { label: 'Green', value: 'green' }
+  ];
+  return (
+    <View style={styles.stepContent}>
+      <View style={styles.centerContent}>
+        {image && (
+          <>
+            <Text style={styles.sectionHeader}>Original Image:</Text>
+            <Image source={{ uri: image }} style={styles.smallImagePreview} />
+          </>
+        )}
+        
+        
+      </View>
+
+      <View style={styles.compactCard}>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Setup Input</Text>
+        </View>
+        
+        <View style={styles.cardBody}>
+          <View style={styles.compactInputRow}>
+            <View style={styles.compactInputWrapper}>
+              <Text style={styles.smallLabel}>Initial Time*</Text>
+              <TextInput
+                style={styles.smallInput}
+                value={inputs?.x_min}
+                onChangeText={(text) => handleInputChange?.('x_min', text)}
+                placeholder="0"
+                keyboardType="numeric"
+              />
+            </View>
+            
+            <View style={styles.compactInputWrapper}>
+              <Text style={styles.smallLabel}>Final Time*</Text>
+              <TextInput
+                style={styles.smallInput}
+                value={inputs?.x_max}
+                onChangeText={(text) => handleInputChange?.('x_max', text)}
+                placeholder="25"
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+
+          <View style={styles.compactInputRow}>
+            <View style={styles.compactInputWrapper}>
+              <Text style={styles.smallLabel}>Y min*</Text>
+              <TextInput
+                style={styles.smallInput}
+                value={inputs?.y_min}
+                onChangeText={(text) => handleInputChange?.('y_min', text)}
+                placeholder="0"
+                keyboardType="numeric"
+              />
+            </View>
+            
+            <View style={styles.compactInputWrapper}>
+              <Text style={styles.smallLabel}>Y max*</Text>
+              <TextInput
+                style={styles.smallInput}
+                value={inputs?.y_max}
+                onChangeText={(text) => handleInputChange?.('y_max', text)}
+                placeholder="1"
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+
+          <View style={styles.compactColorPickersContainer}>
+            {/* OP Color Dropdown */}
+            <View style={styles.colorDropdownWrapper}>
+              <Text style={styles.smallLabel}>OP:</Text>
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity 
+                  style={styles.colorDropdownButton}
+                  onPress={() => toggleDropdown('op')}
+                >
+                  <Text style={styles.colorDropdownText}>{inputs?.opColor}</Text>
+                  <Icon 
+                    name={showDropdown.op ? "chevron-up" : "chevron-down"} 
+                    size={16} 
+                    color="#333" 
+                  />
+                </TouchableOpacity>
+
+                {showDropdown.op && (
+                  <View style={styles.colorDropdownMenu}>
+                    {colorOptions.map(option => (
+                      <TouchableOpacity
+                        key={`op_${option.value}`}
+                        style={styles.colorDropdownItem}
+                        onPress={() => handleColorSelect('opColor', option.value)}
+                      >
+                        <Text>{option.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* PV Color Dropdown */}
+            <View style={styles.colorDropdownWrapper}>
+              <Text style={styles.smallLabel}>PV:</Text>
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity 
+                  style={styles.colorDropdownButton}
+                  onPress={() => toggleDropdown('pv')}
+                >
+                  <Text style={styles.colorDropdownText}>{inputs?.pvColor}</Text>
+                  <Icon 
+                    name={showDropdown.pv ? "chevron-up" : "chevron-down"} 
+                    size={16} 
+                    color="#333" 
+                  />
+                </TouchableOpacity>
+
+                {showDropdown.pv && (
+                  <View style={styles.colorDropdownMenu}>
+                    {colorOptions.map(option => (
+                      <TouchableOpacity
+                        key={`pv_${option.value}`}
+                        style={styles.colorDropdownItem}
+                        onPress={() => handleColorSelect('pvColor', option.value)}
+                      >
+                        <Text>{option.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* SP Color Dropdown */}
+            <View style={styles.colorDropdownWrapper}>
+              <Text style={styles.smallLabel}>SP:</Text>
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity 
+                  style={styles.colorDropdownButton}
+                  onPress={() => toggleDropdown('sp')}
+                >
+                  <Text style={styles.colorDropdownText}>{inputs?.spColor}</Text>
+                  <Icon 
+                    name={showDropdown.sp ? "chevron-up" : "chevron-down"} 
+                    size={16} 
+                    color="#333" 
+                  />
+                </TouchableOpacity>
+
+                {showDropdown.sp && (
+                  <View style={styles.colorDropdownMenu}>
+                    {colorOptions.map(option => (
+                      <TouchableOpacity
+                        key={`sp_${option.value}`}
+                        style={styles.colorDropdownItem}
+                        onPress={() => handleColorSelect('spColor', option.value)}
+                      >
+                        <Text>{option.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+      
+      <View style={styles.navButtonsContainer}>
+        <TouchableOpacity style={styles.prevButton} onPress={onPrevious}>
+          <Text style={styles.buttonText}>PREVIOUS</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.nextButton} onPress={onNext}>
+          <Text style={styles.buttonText}>NEXT</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+const Step3: React.FC<StepProps> = ({ onNext, onPrevious }) => {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('Select Model');
+
+  const handleModelSelect = (model: string) => {
+    setSelectedModel(model);
+    setShowDropdown(false);
+    // Add your model identification logic here
+  };
+
+  return (
+    <View style={styles.stepContent}>
+      <View style={styles.centerContent}>
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Step 3: System Identification</Text>
+          </View>
+          <View style={styles.cardBody}>
+            <View style={styles.dropdownContainer}>
+              <TouchableOpacity 
+                style={styles.dropdownButton}
+                onPress={() => setShowDropdown(!showDropdown)}
+              >
+                <Text style={styles.dropdownButtonText}>{selectedModel}</Text>
+                <Icon name={showDropdown ? "chevron-up" : "chevron-down"} size={20} color="#fff" />
+              </TouchableOpacity>
+
+              {showDropdown && (
+                <View style={styles.dropdownMenu}>
+                  <TouchableOpacity 
+                    style={styles.dropdownItem}
+                    onPress={() => handleModelSelect('FOPTD Identification')}
+                  >
+                    <Text>FOPTD Identification</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.dropdownItem}
+                    onPress={() => handleModelSelect('SOPTD Identification')}
+                  >
+                    <Text>SOPTD Identification</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.dropdownItem}
+                    onPress={() => handleModelSelect('Integrator Plus Dead Time (IPDT)')}
+                  >
+                    <Text>Integrator Plus Dead Time (IPDT)</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            {/* Placeholder for graph container */}
+            <View style={styles.graphContainer}>
+              <Text>Modeling graph will appear here</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.navButtonsContainer}>
+        <TouchableOpacity style={styles.prevButton} onPress={onPrevious}>
+          <Text style={styles.buttonText}>PREVIOUS</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.nextButton} onPress={onNext}>
+          <Text style={styles.buttonText}>NEXT</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 };
 
