@@ -1,4 +1,7 @@
 from django.http import JsonResponse
+
+
+
 from django.shortcuts import render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -17,87 +20,108 @@ import numpy as np
 from scipy.optimize import minimize
 from scipy.integrate import cumulative_trapezoid
 from collections import deque
-
-
-def hello_api(request):
-    console.log("Hello from Django!")
-    return JsonResponse({"message": "Hello from Django!"})
-
+import traceback
+import os
 
 # Define global variable
 # global time_data
 # global pv_data
 # Create your views here.
-def control_tuning_imagebased(request):
-    return render(request, 'extract_imagedata.html')
+pv_data = None
+op_data = None
+criteria = None
+controller_type = None
+modeling_type = None
+print("before the functions ran")
+
+print(pv_data)
+print(op_data)
+print(criteria)
+print(controller_type)
+print(modeling_type)
 
 
+def hello_api(request):
+    return JsonResponse({"message": "Hello from Django!"})
 
 @csrf_exempt
 def upload_image(request):
-    if request.method == 'POST' and request.FILES.get('image'):
-        image = request.FILES['image']
-        # input_value = request.POST.get('input')
-        print(request.POST)
-        global x_min, x_max, y_min, y_max
-        y_min = float(request.POST.get('y_min'))
-        y_max = float(request.POST.get('y_max'))
-        x_min = float(request.POST.get('x_min'))
-        x_max = float(request.POST.get('x_max'))
-        op_color = request.POST.get('op-color')
-        pv_color = request.POST.get('pv-color')
-        # sp_color = request.POST.get('sp-color')
-        # sp_color = 'green'
-        # Create a dictionary mapping each variable (OP, PV, SP) to its color
-        variable_to_color = {
-            'OP': op_color,
-            'PV': pv_color,
-            # 'SP': sp_color
-        }
-
-        # Now determine the reverse: which category gets which color
-        for var_name, color in variable_to_color.items():
-            # if color == 'green':
-            #     line_green_name = var_name
-            if color == 'blue':
-                line_blue_name = var_name
-            elif color == 'red':
-                line_red_name = var_name
-        
-        
-        image_bytes = image.read()  # Read file as bytes
-        # Convert bytes to a NumPy array
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        # Decode the image using OpenCV
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-
-        # Process the image (save it, run some analysis, etc.)
-        # Example: Save image, generate a graph
-         # Convert the Plotly figure to an HTML div string
-        red_df, red_df_scaled, green_df, green_df_scaled, blue_df, blue_df_scaled = extract_data(img, y_min, y_max, x_min, x_max)
-        # global pv_data
-        # global op_data
-        # pv_data = blue_df_scaled
-        # op_data = red_df_scaled
-        global pv_data
-        global op_data
-        if line_blue_name == 'PV':
-            pv_data = blue_df_scaled
-            op_data = red_df_scaled
-        elif line_blue_name == 'OP':
-            pv_data = red_df_scaled
-            op_data = blue_df_scaled
-        # op_data = np.ones_like(red_df_scaled['x'])#*red_df_scaled.max()
-        # t0 = get_estimated_timeStepChange(np.array(red_df_scaled['y']), list(red_df_scaled['x']) )
-        # op_data[0:int(t0)] = 0
-        # time_data, pv_data = get_pv(blue_df_scaled)
-        graph_html = plot_extract_data(y_min,y_max,x_min, x_max, red_df, red_df_scaled, line_red_name, green_df, green_df_scaled, blue_df, blue_df_scaled, line_blue_name )
+    if request.method == 'POST':
+        try:
+            # Get image file
+            if 'image' not in request.FILES:
+                return JsonResponse({'error': 'No image provided'}, status=400)
+            
+            image = request.FILES['image']
+            
+            # Get parameters from POST data
+            params = json.loads(request.POST.get('params', '{}'))
+            y_min = float(params.get('y_min', 0))
+            y_max = float(params.get('y_max', 1))
+            x_min = float(params.get('x_min', 0))
+            x_max = float(params.get('x_max', 1))
+            op_color = params.get('op_color', 'red')
+            pv_color = params.get('pv_color', 'blue')
+            
+            # Process the image
+            image_bytes = image.read()
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            # Determine which color corresponds to which variable
+            variable_to_color = {
+                'OP': op_color,
+                'PV': pv_color,
+            }
+            global pv_data
+            global op_data
+            
+            line_blue_name = None
+            line_red_name = None
+            for var_name, color in variable_to_color.items():
+                if color == 'blue':
+                    line_blue_name = var_name
+                elif color == 'red':
+                    line_red_name = var_name
+            
+            # Extract data from image
+            red_df, red_df_scaled, green_df, green_df_scaled, blue_df, blue_df_scaled = extract_data(
+                img, y_min, y_max, x_min, x_max
+            )
+            
+            # Store data globally if needed
+            
+            if line_blue_name == 'PV':
+                pv_data = blue_df_scaled
+                op_data = red_df_scaled
+            elif line_blue_name == 'OP':
+                pv_data = red_df_scaled
+                op_data = blue_df_scaled
+            
+            
+            # Generate plot
+            graph_html = plot_extract_data(
+                y_min, y_max, x_min, x_max,
+                red_df, red_df_scaled, line_red_name,
+                green_df, green_df_scaled,
+                blue_df, blue_df_scaled, line_blue_name
+            )
+            
+            # Prepare data for response
+            response_data = {
+                'status': 'success',
+                'graph_html': graph_html,
+                'pv_data': pv_data.to_dict() if pv_data is not None else None,
+                'op_data': op_data.to_dict() if op_data is not None else None
+            }
+            
+            return JsonResponse(response_data)
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
     
-        # image_url = image #'path_to_image.jpg'  # Example: Save image and return URL
-        # graph_url = 'path_to_graph.jpg'  # Example: Generate graph and return URL
-        return JsonResponse({'graph_html': graph_html})
-        # return JsonResponse({'image_url': image_url, 'graph_html': graph_html})
+    return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
+
 
 
 def get_hsv_ranges(image, hsv_image, k=3, margin=20):
@@ -144,7 +168,7 @@ def get_hsv_ranges(image, hsv_image, k=3, margin=20):
     return color_ranges
 
 
-def extract_data(image, y_min, y_max, x_min, x_max):
+def extract_data(image, y_min=0, y_max=1, x_min=0, x_max=1):
     # Load the image
     # image = cv2.imread('/content/drive/MyDrive/Colab Notebooks/LoopTest1.JPG')
     # image = img #cv2.imread(img)
@@ -514,6 +538,8 @@ def get_estimated_timeStepChange(signal, time):
 
 
 
+@csrf_exempt
+
 def identify_foptd(request):
     """
     Identify the first-order plus time delay (FOPTD) model parameters.
@@ -542,39 +568,6 @@ def identify_foptd(request):
     t = t[start_index:]  # Slice from t0 onward
     t = [x - t[0] for x in t]  # Reset so first value is 0
     process_data = process_data[int(t0*10):]
-    # t = t[int(t0):]
-    # process_data = process_data[int(t0):]
-    # estimated_delay = td-t0
-    # # Parameters
-    # u_inf = OP[-1]
-    # u_0 = OP[0]
-    # # y0 = np.mean(process_data[:int(td)])
-    # y0 = process_data[int(td)]
-    # y_inf = np.mean(process_data[-10:])
-    # y_tau = (y_inf - y0)*0.632 + y0
-    # x_tau = t[process_data[y_tau]]
-    # print(u_0, u_inf, y0, y_inf, y_tau)
-    # # t0 = time[0]
-    # # td = t[int(estimated_delay)]
-    # # Find the index where the signal is closest to y_tau
-    # # idx = (process_data - y_tau).abs().idxmin()
-    # # # Get the corresponding x value
-    # # t1 = t[idx]
-
-    # # time_delay = td - t0
-    # print(f"Time delay: {estimated_delay}")
-    # # time_constant = t1 - td
-    # # print(f"Time constant(tau): {time_constant}")
-    # k_gain = (y_inf - y0)/(u_inf - u_0)
-    # print(f"K-gain: {k_gain}")
-
-    # global Kp_fit, tau_fit, theta_fit
-    # Kp_fit, tau_fit, theta_fit = k_gain, x_tau, estimated_delay
-
-    # Sample data
-    # t = np.linspace(0, 10, 100)
-    # process_data = np.sin(t)
-    # print(t, process_data)
 
     def first_order_tf_with_delay(t, Kp, tau, theta):
         A = OP[-1] - OP[0] #1  # Magnitude of step change in input
@@ -718,150 +711,162 @@ def identify_foptd(request):
     # Convert the Plotly figure to an HTML div string
     modeling_graph_html = fig.to_html(full_html=False)
 
-    return JsonResponse({'modeling_graph_html': modeling_graph_html})
+    return JsonResponse({
+        'modeling_graph_html': modeling_graph_html,
+        'modeling_params': [Kp_fit, tau_fit, theta_fit],
+        'modeling_params_names': ['Kp', 'Tau', 'Theta']
+    })
 
     # return JsonResponse({'Kp_fit': Kp_fit, 'tau_fit': tau_fit,'theta_fit':theta_fit})
+
+    
+print(pv_data)
+print(op_data)
+
+@csrf_exempt
 
 
 def identify_soptd(request):
     """
     Identify the second-order plus time delay (SOPTD) model parameters.
-
-    Parameters:
-        t (array-like): Time data.
-        process_data (array-like): Process response data.
-        initial_guess (tuple): Initial guess for (Kp, tau1, tau2, theta).
-
-    Returns:
-        tuple: Identified parameters (Kp, tau1, tau2, theta).
     """
     global modeling_type
     modeling_type = 'Second-Order Plus Dead Time (SOPDT)'
-    t = list(pv_data['x']), 
-    t=t[0]
-    process_data = np.array(pv_data['y'])
-    OP = np.array(op_data['y'])
-    t0 = get_estimated_timeStepChange(OP, t)
-    td = get_estimated_timeStepChange(process_data, t)
     
-    start_index = int(t0 * 10)  # Convert t0 (seconds) to index
-    t = t[start_index:]  # Slice from t0 onward
-    t = [x - t[0] for x in t]  # Reset so first value is 0
-    process_data = process_data[int(t0*10):]
+    try:
+        # Get and prepare data
+        t = np.array(pv_data['x'])
+        process_data = np.array(pv_data['y'])
+        OP = np.array(op_data['y'])
+        
+        # Find step change times
+        t0 = get_estimated_timeStepChange(OP, t)
+        td = get_estimated_timeStepChange(process_data, t)
+        
+        # Adjust time and data arrays
+        start_index = max(0, int(t0 * 10))  # Safely convert to index
+        t = t[start_index:]
+        t = t - t[0]  # Reset time to start at 0
+        process_data = process_data[start_index:]
 
-    def second_order_tf_with_delay(t, Kp, tau, zeta, Θ):
-        A = 1 #OP[-1] - OP[0] #1
-        response = np.zeros_like(t)
-        for i, time in enumerate(t):
-            if time >= Θ:
-                timeshift = time - Θ
-                if zeta > 1:  # overdamped process
-                    AA1 = math.cosh(np.sqrt(zeta ** 2 - 1) * (timeshift / tau))
-                    AA0 = zeta / np.sqrt(zeta ** 2 - 1)
-                    AA2 = math.sinh(np.sqrt(zeta ** 2 - 1) * (timeshift / tau))
-                    response[i] = A * Kp * (1 - np.exp(-(timeshift * zeta) / tau) * (AA1 + AA0 * AA2))
-                elif zeta == 1:  # critically damped process
-                    response[i] = A * Kp * (1 - (1 + (timeshift / tau)) * np.exp(-timeshift / tau))
-                else:  # underdamped process
-                    BB0 = 1 / np.sqrt(1 - zeta ** 2)
-                    omega = np.sqrt(1 - zeta ** 2) / tau
-                    phi = math.atan(np.sqrt(1 - zeta ** 2) / zeta)
-                    response[i] = A * Kp * (
-                                1 - BB0 * np.exp(-(timeshift * zeta) / tau) * math.sin(omega * timeshift + phi))
-        return response
+        def second_order_tf_with_delay(t, Kp, tau, zeta, theta):
+            """Modified transfer function with numerical safeguards"""
+            response = np.zeros_like(t)
+            A = 1  # Step magnitude
+            
+            for i, time in enumerate(t):
+                if time >= theta:
+                    timeshift = time - theta
+                    ts_tau = timeshift / tau
+                    
+                    try:
+                        if zeta > 1:  # Overdamped
+                            sqrt_val = np.sqrt(zeta**2 - 1)
+                            # Add checks for numerical stability
+                            if not np.isfinite(sqrt_val):
+                                return np.full_like(t, np.nan)
+                                
+                            exp_term = np.exp(-zeta * ts_tau)
+                            cosh_term = np.cosh(sqrt_val * ts_tau)
+                            sinh_term = np.sinh(sqrt_val * ts_tau)
+                            response[i] = A * Kp * (1 - exp_term * (cosh_term + (zeta/sqrt_val)*sinh_term))
+                            
+                        elif zeta == 1:  # Critically damped
+                            exp_term = np.exp(-ts_tau)
+                            response[i] = A * Kp * (1 - (1 + ts_tau) * exp_term)
+                            
+                        else:  # Underdamped (0 < zeta < 1)
+                            sqrt_val = np.sqrt(1 - zeta**2)
+                            omega = sqrt_val / tau
+                            phi = np.arctan2(sqrt_val, zeta)
+                            exp_term = np.exp(-zeta * ts_tau)
+                            response[i] = A * Kp * (1 - (exp_term/sqrt_val) * np.sin(omega*timeshift + phi))
+                            
+                    except (FloatingPointError, OverflowError):
+                        return np.full_like(t, np.nan)
+                        
+            return response
 
-    # Initial guesses for Kp, tau1, tau2, theta
-    initial_guess = [1.0, 1.0, 0.5, 1.0]
-    # Fit the model
+        # Improved initial guesses with bounds
+        initial_guess = [1.0, 1.0, 0.7, 1.0]  # Kp, tau, zeta, theta
+        bounds = (
+            [0.1, 0.1, 0.1, 0],    # Lower bounds
+            [100, 100, 10, 10]      # Upper bounds
+        )
+
+        # Perform curve fitting with error handling
+        try:
+            params, _ = curve_fit(
+                second_order_tf_with_delay,
+                t,
+                process_data,
+                p0=initial_guess,
+                bounds=bounds,
+                maxfev=10000  # Increase maximum function evaluations
+            )
+            Kp_est, tau_est, zeta_est, theta_est = params
+            
+            # Validate parameters
+            if not all(np.isfinite(params)):
+                raise ValueError("Invalid parameter values obtained")
+                
+        except (RuntimeError, ValueError) as e:
+            print(f"Curve fitting failed: {str(e)}")
+            # Fallback to reasonable defaults
+            Kp_est, tau_est, zeta_est, theta_est = 1.0, 1.0, 0.7, 1.0
+
+        # Store results
+        global modeling_params, modeling_params_names
+        modeling_params = [Kp_est, tau_est, zeta_est, theta_est]
+        modeling_params_names = ['Kp', 'Tau', 'Zeta', 'Theta']
+
+        # Generate model response
+        ymodel = second_order_tf_with_delay(t, Kp_est, tau_est, zeta_est, theta_est)
+
+        # Create plot
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=t, y=ymodel, mode='lines', name='Fitted Model'))
+        fig.add_trace(go.Scatter(x=t, y=process_data, mode='lines', name='Process Data'))
+        
+        fig.update_layout(
+            title='SOPTD Model Identification',
+            xaxis_title='Time',
+            yaxis_title='Process Output',
+            template="plotly_white",
+            annotations=[{
+                'x': 0.95,
+                'y': 0.4,
+                'xref': "paper",
+                'yref': "paper",
+                'text': f"Θ: {theta_est:.2f}<br>τ: {tau_est:.2f}<br>Kp: {Kp_est:.2f}<br>ζ: {zeta_est:.2f}",
+                'showarrow': False
+            }]
+        )
+
+        # Convert to HTML
+        modeling_graph_html = fig.to_html(full_html=False)
+        print( 'parameters',{
+                'Kp': float(Kp_est),
+                'tau': float(tau_est),
+                'zeta': float(zeta_est),
+                'theta': float(theta_est)
+            },)
+        return JsonResponse({
+            'modeling_graph_html': modeling_graph_html,
+            'parameters': {
+                'Kp': float(Kp_est),
+                'tau': float(tau_est),
+                'zeta': float(zeta_est),
+                'theta': float(theta_est)
+            },
+            'success': True
+        })
+
+    except Exception as e:
+        print(f"Error in identify_soptd: {str(e)}")
+        return JsonResponse({'error': str(e)}, status=500)
     
-    params, params_covariance = curve_fit(second_order_tf_with_delay, t, process_data, p0=initial_guess)
-    Kp_est, tau_est, zeta_est, Θ_est = params
-
-    global modeling_params
-    modeling_params = params
-    global modeling_params_names
-    modeling_params_names = ['Kp', 'Tau', 'Zeta', 'Theta']
-
-    ymodel = second_order_tf_with_delay(t, Kp_est, tau_est, zeta_est, Θ_est)
-
-    
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(x=t, y=ymodel,
-                            mode='lines',
-                            name='Fitted Model'))
-
-    fig.add_trace(go.Scatter(x=t, y=process_data,
-                            mode='lines',
-                            name='Process Data'))
-
-    # fig.add_trace(go.Scatter(x=[t0], y=[y0],
-    #                         mode='markers',
-    #                         marker=dict(color='red', size=10),
-    #                         name='t0, y0'))
-
-    # fig.add_trace(go.Scatter(x=[td], y=[y0],
-    #                         mode='markers',
-    #                         marker=dict(color='green', size=10),
-    #                         name='td, y0'))
-
-    # fig.add_trace(go.Scatter(x=[t1], y=[y_tau],
-    #                         mode='markers',
-    #                         marker=dict(color='blue', size=10),
-    #                         name='t1, y_tau'))
-
-    # fig.add_shape(go.layout.Shape(
-    #     type="line",
-    #     x0=min(t),
-    #     y0=y_inf,
-    #     x1=max(t),
-    #     y1=y_inf,
-    #     line=dict(color="purple", width=2, dash="dash"),
-    # ))
-
-    # fig.add_shape(go.layout.Shape(
-    #     type="line",
-    #     x0=min(t),
-    #     y0=y0,
-    #     x1=max(t),
-    #     y1=y0,
-    #     line=dict(color="orange", width=2, dash="dash"),
-    # ))
-
-    # fig.add_shape(go.layout.Shape(
-    #     type="line",
-    #     x0=min(t),
-    #     y0=y_tau,
-    #     x1=max(t),
-    #     y1=y_tau,
-    #     line=dict(color="gray", width=2, dash="dash"),
-    # ))
-
-
-    fig.update_layout(title='SOPTD Model Identification',
-                    xaxis_title='Time',
-                    yaxis_title='Process Output',
-                    template="plotly_white",
-                    autosize=True,
-                    annotations=[
-                        # dict(x=t0, y=y0, text=f"t0", showarrow=True, arrowhead=7),
-                        # dict(x=td, y=y0, text=f"td = {td:.2f}", showarrow=True, arrowhead=7),
-                        # dict(x=t1, y=y_tau, text=f"t1 = {t1:.2f}, y_tau = {y_tau:.2f}", showarrow=True, arrowhead=7),
-                        # dict(x=t1, y=y_inf, text=f"y_inf = {y_inf:.2f}", showarrow=True, arrowhead=7),
-                        dict(x=0.95, y=0.4, xref="paper", yref="paper",
-                            text=f"Θ_est : {Θ_est:.2f}<br>tau_est : {tau_est:.2f}<br>Kp_est: {Kp_est:.2f}<br>zeta_est: {zeta_est:.2f}",
-                            showarrow=False)
-                    ]
-                    )
-
-    # fig.show() Kp_est, tau_est, zeta_est, Θ_est
-    global modeling_graph
-    modeling_graph = fig
-    # Convert the Plotly figure to an HTML div string
-    modeling_graph_html = fig.to_html(full_html=False)
-
-    return JsonResponse({'modeling_graph_html': modeling_graph_html})
-
+@csrf_exempt
 
 def identify_integrator_delay(request):
     # define response of integrator with time delay to a step change in input
@@ -977,8 +982,12 @@ def identify_integrator_delay(request):
     # Convert the Plotly figure to an HTML div string
     modeling_graph_html = fig.to_html(full_html=False)
 
-    return JsonResponse({'modeling_graph_html': modeling_graph_html})
-
+    return JsonResponse({
+    'modeling_graph_html': modeling_graph_html,
+    'modeling_params': [Kp_est, theta_est],
+    'modeling_params_names': ['Kp', 'Theta']
+})
+@csrf_exempt
 
 def identify_inverse_response_tf(request):
     global modeling_type
@@ -1098,8 +1107,14 @@ def identify_inverse_response_tf(request):
     # Convert the Plotly figure to an HTML div string
     modeling_graph_html = fig.to_html(full_html=False)
 
-    return JsonResponse({'modeling_graph_html': modeling_graph_html})
+    return JsonResponse({
+        'modeling_graph_html': modeling_graph_html,
+        'theta_est': theta_fit,
+        'Kp_est': Kp_fit,
+    
+    })
 
+@csrf_exempt
 
 def design_imc_pid(controller_type, Kp, Tau, theta, lambda1):
     """
@@ -1299,10 +1314,13 @@ def design_imc_pid(controller_type, Kp, Tau, theta, lambda1):
 #     tuning_graph_html = fig.to_html(full_html=False)
 
 #     return JsonResponse({'tuning_graph_html': tuning_graph_html})
-
+print(pv_data,"beforee pid")
+print(op_data)
 
 @csrf_exempt
 def simulate_pid(request):
+    print(pv_data,"inside pid")
+    print(op_data)
     # if not hasattr(self, "pv") or self.pv is None:
     #     raise ValueError("Process variable (pv) is not defined. Perform data extraction first.")
 
@@ -1958,261 +1976,214 @@ def simulate_p(request):
 #input("Enter process model (FOPTD, IPDT, SOPTD): ")
 @csrf_exempt
 def simulate_close_loop_response(request):
-
-    global controller_type
-    controller_type = request.POST.get('controller_type')
-    global criteria
-    criteria  = request.POST.get('criteria')
-
-    process_model = modeling_type 
-
-    # Define simulation parameters
-    # dt = 0.01  # Discrete time step
-    dt = 0.1
-    # t_final = 25
-    # time = np.arange(0, t_final, dt)  # Time array
-    t = list(pv_data['x']), 
-    t=t[0]
-    time = t
-    process_params = modeling_params
-
-    # # Define process model parameters based on user selection
-    # if process_model == "First-Order Plus Dead Time (FOPDT)":
-    #     Kp = 1.0  # Process gain
-    #     Tau = 2.0  # Time constant
-    #     theta = 1.0  # Time delay in seconds
-    #     process_params = [Kp, Tau, theta]
-    # elif process_model == "IPDT":
-    #     Kp = 1.0
-    #     theta = 1.0
-    #     process_params = [Kp, theta]
-    # elif process_model == "SOPTD":
-    #     Kp = 1.0
-    #     Tau = 2.0
-    #     Zeta = 0.7
-    #     theta = 1.0
-    #     process_params = [Kp, Tau, Zeta, theta]
-    # else:
-    #     raise ValueError("Invalid process model selected!")
-
-    # Ziegler-Nichols tuning method (only for FOPTD)
-    def ziegler_nichols_tuning(Kp, Tau, theta):
-        Ku = (0.6 * Tau) / (Kp * theta)
-        Tu = 2 * theta  # Approximate ultimate period
-        return {
-            "P": [0.5 * Ku, 0.0, 0.0],
-            "PI": [0.45 * Ku, 0.54 * Ku / Tu, 0.0],
-            "PID": [0.6 * Ku, 1.2 * Ku / Tu, 0.075 * Ku * Tu]
+    try:
+        # Model type mapping from frontend to backend
+        MODEL_TYPE_MAPPING = {
+            'FOPTD Identification': 'First-Order Plus Dead Time (FOPDT)',
+            'SOPTD Identification': 'Second-Order Plus Dead Time (SOPDT)',
+            'Integrator Plus Dead Time (IPDT)': 'Integrator Plus Dead Time (IPDT)'
         }
 
-    # Custom heuristic initialization for SOPTD and IPDT
-    custom_initial_params = {
-        "P": [1.0, 0.0, 0.0],
-        "PI": [1.0, 1.0, 0.0],
-        "PID": [1.0, 1.0, 1.0]
-    }
+        # Parse request data
+        try:
+            data = request.POST if request.method == 'POST' else json.loads(request.body)
+            controller_type = data.get('controller_type')
+            criteria = data.get('criteria')
+            frontend_model_type = data.get('modeling_type')
+            
+            # Map to backend model type
+            modeling_type = MODEL_TYPE_MAPPING.get(frontend_model_type, frontend_model_type)
+            
+            # Parse modeling parameters
+            modeling_params = []
+            if 'modeling_params' in data:
+                try:
+                    modeling_params = json.loads(data.get('modeling_params'))
+                except:
+                    modeling_params = data.get('modeling_params', [])
+        except Exception as e:
+            return JsonResponse({
+                'error': f'Parameter parsing failed: {str(e)}',
+                'received_data': dict(request.POST)
+            }, status=400)
 
-    # Closed-loop response function
-    def closed_loop_response(PID_params, process_params, time, ysp, controller_type):
-        Kc, Ki, Kd = PID_params
+        # Validate required parameters
+        if not all([controller_type, criteria, modeling_type]):
+            return JsonResponse({
+                'error': 'Missing required parameters',
+                'received': {
+                    'controller_type': controller_type,
+                    'criteria': criteria,
+                    'modeling_type': modeling_type
+                }
+            }, status=400)
 
-        if process_model == "First-Order Plus Dead Time (FOPDT)":
-            Kp, Tau, theta = process_params
-        elif process_model == "Integrator Plus Dead Time (IPDT)":
-            Kp, theta = process_params
-            Tau = dt  # Use discrete integration step for proper numerical stability
-        elif process_model == "Second-Order Plus Dead Time (SOPDT)":
-            Kp, Tau, Zeta, theta = process_params
+        # Set default parameters if not provided
+        if not modeling_params:
+            modeling_params = [1.0, 1.0, 1.0]  # Kp, Tau, Theta defaults
 
-        y = np.zeros_like(time)
-        u = np.zeros_like(time)
-        e = np.zeros_like(time)
-        integral = 0.0
-        prev_error = 0.0
-        delay_steps = int(theta / dt)
-        u_delayed = deque([0] * delay_steps, maxlen=delay_steps)
+        # Extract process parameters with safety checks
+        try:
+            Kp = float(modeling_params[0]) if len(modeling_params) > 0 else 1.0
+            tau = float(modeling_params[1]) if len(modeling_params) > 1 else 1.0
+            theta = float(modeling_params[2]) if len(modeling_params) > 2 else 1.0
+            process_params = [Kp, tau, theta]
+        except Exception as e:
+            return JsonResponse({
+                'error': f'Invalid modeling parameters: {str(e)}',
+                'modeling_params': modeling_params
+            }, status=400)
 
-        for i in range(1, len(time)):
-            e[i] = ysp[i] - y[i - 1]
-            integral = cumulative_trapezoid(e[:i+1], time[:i+1], initial=0)[-1]
+        # Simulation parameters
+        dt = 0.1
+        time = np.arange(0, 25, dt)
+        ysp = np.ones_like(time)
+        ysp[0] = 0
 
-            if i > 1:
-                derivative = np.gradient(e[:i+1], dt)[-1]
-            else:
-                derivative = 0
+        # Initialize controller parameters
+        def get_initial_params(controller_type, modeling_type, Kp, tau, theta):
+            if modeling_type == "First-Order Plus Dead Time (FOPDT)":
+                Ku = (0.6 * tau) / (Kp * theta)
+                Tu = 2 * theta
+                return {
+                    "P": [0.5 * Ku, 0.0, 0.0],
+                    "PI": [0.45 * Ku, 0.54 * Ku / Tu, 0.0],
+                    "PID": [0.6 * Ku, 1.2 * Ku / Tu, 0.075 * Ku * Tu]
+                }.get(controller_type, [1.0, 0.0, 0.0])
+            return {
+                "P": [1.0, 0.0, 0.0],
+                "PI": [1.0, 1.0, 0.0],
+                "PID": [1.0, 1.0, 1.0]
+            }.get(controller_type, [1.0, 0.0, 0.0])
 
-            derivative_filtered = 0.9 * derivative + 0.1 * prev_error
+        initial_params = get_initial_params(controller_type, modeling_type, Kp, tau, theta)
+        
+        # Set bounds based on controller type
+        bounds = {
+            "P": [(0, 10), (0, 0), (0, 0)],
+            "PI": [(0, 10), (0, 10), (0, 0)],
+            "PID": [(0, 10), (0, 10), (0, 10)]
+        }.get(controller_type, [(0,10)]*3)
 
-            if controller_type == "P":
-                u[i] = Kc * e[i]
-            elif controller_type == "PI":
-                u[i] = Kc * e[i] + Ki * integral
-            elif controller_type == "PID":
-                u[i] = Kc * e[i] + Ki * integral + Kd * derivative_filtered
+        # Run optimization
+        result = minimize(
+            objective_function, 
+            initial_params, 
+            args=(process_params, time, ysp, controller_type, modeling_type, criteria, dt),
+            method='L-BFGS-B', 
+            bounds=bounds
+        )
+        
+        optimal_params = result.x
 
-            prev_error = e[i]
+        # Simulate response with optimal parameters
+        y_opt = closed_loop_response(optimal_params, process_params, time, ysp, controller_type, modeling_type, dt)
 
-            u_delayed.append(u[i])
-            if process_model == "First-Order Plus Dead Time (FOPDT)":
-                y[i] = y[i - 1] + (dt / Tau) * (Kp * u_delayed[0] - y[i - 1])
-            elif process_model == "Integrator Plus Dead Time (IPDT)":
-                y[i] = y[i - 1] + dt * Kp * u_delayed[0]  # Proper integration for IPDT
-            elif process_model == "Second-Order Plus Dead Time (SOPDT)":
-                y[i] = y[i - 1] + (dt / (Tau**2)) * (Kp * u_delayed[0] - 2 * Zeta * Tau * y[i-1] - y[i - 2])
+        # Prepare results
+        param_names = {
+            1: ["Kp"],
+            2: ["Kp", "Ki"],
+            3: ["Kp", "Ki", "Kd"]
+        }.get(len(optimal_params), [f"Param_{i+1}" for i in range(len(optimal_params))])
 
-        return y
+        # Create plot
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=time, y=ysp, mode='lines', name='Setpoint'))
+        fig.add_trace(go.Scatter(x=time, y=y_opt, mode='lines', name='Response'))
 
-    # Define objective function
-    def objective_function(PID_params, process_params, time, ysp, controller_type):
-        y = closed_loop_response(PID_params, process_params, time, ysp, controller_type)
-        offset = ysp - y
+        # Add parameter annotations
+        annotation_text = "<br>".join([f"{name}: {value:.4f}" for name, value in zip(param_names, optimal_params)])
+        fig.update_layout(
+            title=f'{criteria} - {controller_type} Controller Response',
+            xaxis_title='Time',
+            yaxis_title='Process Output',
+            template="plotly_white",
+            annotations=[dict(
+                x=0.95, y=0.4, 
+                xref="paper", yref="paper",
+                text=annotation_text,
+                showarrow=False
+            )]
+        )
 
-        if criteria == "ISE":
-            return np.sum(offset**2) * dt  # Integral of Squared Error
-        elif criteria == "IAE":
-            return np.sum(np.abs(offset)) * dt  # Integral of Absolute Error
-        elif criteria == "ITAE":
-            return np.sum(time * np.abs(offset)) * dt  # Integral of Time-weighted Absolute Error
-        else:
-            raise ValueError("Invalid criteria selected!")
+        return JsonResponse({
+            'status': 'success',
+            'tuning_graph_html': fig.to_html(full_html=False),
+            'parameters': optimal_params.tolist(),
+            'parameter_names': param_names,
+            'performance_metrics': {
+                'overshoot': float(np.max(y_opt) - 1),
+                'settling_time': float(np.argmax(y_opt > 0.95 * ysp[-1]) * dt)
+            }
+        })
 
-    # Solve the optimization problem
-    ysp = np.ones_like(time)
-    ysp[0] = 0
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }, status=500)
 
-    # Get initial parameters
-    if process_model == "First-Order Plus Dead Time (FOPDT)":
-        initial_params_dict = ziegler_nichols_tuning(Kp_fit, tau_fit, theta_fit)
-    else:
-        initial_params_dict = custom_initial_params
 
-    # Optimize for P, PI, and PID using L-BFGS-B
-    # controller_types = ["P", "PI", "PID"]
-    optimal_params = {}
-
-    # for controller_type in controller_types:
-    initial_params = initial_params_dict[controller_type]
-    if controller_type == "P":
-        bounds = [(0, 10), (0, 0), (0, 0)]
-    elif controller_type == "PI":
-        bounds = [(0, 10), (0, 10), (0, 0)]
-    elif controller_type == "PID":
-        bounds = [(0, 10), (0, 10), (0, 10)]
-
-    result = minimize(objective_function, initial_params, args=(process_params, time, ysp, controller_type), method='L-BFGS-B', bounds=bounds)
-    optimal_params[controller_type] = result.x
-    print(f"Optimal {controller_type} Controller: Kp={result.x[0]}, Ki={result.x[1]}, Kd={result.x[2]}")
-
-    # # Plot closed-loop responses for all controllers
-    # plt.figure(figsize=(10, 6))
-    # for controller_type in controller_types:
-    y_opt = closed_loop_response(optimal_params[controller_type], process_params, time, ysp, controller_type)
+def closed_loop_response(PID_params, process_params, time, ysp, controller_type, modeling_type, dt):
+    """Simulate closed-loop response with given PID parameters"""
+    Kc, Ki, Kd = PID_params[:3]
     
-    global params
-    params = optimal_params[controller_type]
-    response = y_opt
-    # Define possible parameter names in order
-    # param_names_list = [["Kc", "TauI"], 
-    #                     ["Kc", "TauI", "Taud"], 
-    #                     ["Kc", "TauI", "Taud", "TauF"]]
-    param_names_list = [["Kp"], 
-                        ["Kp", "Ki"], 
-                        ["Kp", "Ki", "Kd"]]
+    # Extract process parameters
+    Kp = process_params[0]
+    theta = process_params[2] if len(process_params) > 2 else 0
+    delay_steps = max(1, int(theta / dt))
+    
+    # Initialize arrays
+    y = np.zeros_like(time)
+    u = np.zeros_like(time)
+    e = np.zeros_like(time)
+    integral = 0.0
+    u_delayed = deque([0.0] * delay_steps, maxlen=delay_steps)
 
-    # Select the correct names based on the tuple length
-    global param_names
-    param_names = param_names_list[len(params) - 1]
+    for i in range(1, len(time)):
+        # Error calculation
+        e[i] = ysp[i] - y[i-1]
+        integral += e[i] * dt
+        
+        # Controller action
+        if controller_type == "P":
+            u[i] = Kc * e[i]
+        elif controller_type == "PI":
+            u[i] = Kc * e[i] + Ki * integral
+        elif controller_type == "PID":
+            derivative = (e[i] - e[i-1])/dt if i > 1 else 0
+            u[i] = Kc * e[i] + Ki * integral + Kd * derivative
+        
+        # Process model with time delay
+        u_delayed.append(u[i])
+        
+        if modeling_type == "First-Order Plus Dead Time (FOPDT)":
+            tau = process_params[1] if len(process_params) > 1 else 1.0
+            y[i] = y[i-1] + (dt/tau) * (Kp*u_delayed[0] - y[i-1])
+        elif modeling_type == "Integrator Plus Dead Time (IPDT)":
+            y[i] = y[i-1] + dt * Kp * u_delayed[0]
+        elif modeling_type == "Second-Order Plus Dead Time (SOPDT)":
+            tau = process_params[1] if len(process_params) > 1 else 1.0
+            zeta = process_params[2] if len(process_params) > 2 else 0.7
+            if i > 1:
+                y[i] = y[i-1] + (dt/tau) * (Kp*u_delayed[0] - 2*zeta*y[i-1] - (y[i-1]-y[i-2])/dt)
 
-    print(params)
-    # Create the annotation text dynamically
-    text = "<br>".join([f"{name} : {value:.2f}" for name, value in zip(param_names, params)])
-
-    annotation = dict(
-        x=0.95, 
-        y=0.4, 
-        xref="paper", 
-        yref="paper",
-        text=text,
-        showarrow=False
-    )
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(x=t, y=ysp,
-                            mode='lines',
-                            name='Setpoint'))
-
-    fig.add_trace(go.Scatter(x=t, y=response,
-                            mode='lines',
-                            name='Response'))
-
-    # fig.add_trace(go.Scatter(x=[t0], y=[y0],
-    #                         mode='markers',
-    #                         marker=dict(color='red', size=10),
-    #                         name='t0, y0'))
-
-    # fig.add_trace(go.Scatter(x=[td], y=[y0],
-    #                         mode='markers',
-    #                         marker=dict(color='green', size=10),
-    #                         name='td, y0'))
-
-    # fig.add_trace(go.Scatter(x=[t1], y=[y_tau],
-    #                         mode='markers',
-    #                         marker=dict(color='blue', size=10),
-    #                         name='t1, y_tau'))
-
-    # fig.add_shape(go.layout.Shape(
-    #     type="line",
-    #     x0=min(t),
-    #     y0=y_inf,
-    #     x1=max(t),
-    #     y1=y_inf,
-    #     line=dict(color="purple", width=2, dash="dash"),
-    # ))
-
-    # fig.add_shape(go.layout.Shape(
-    #     type="line",
-    #     x0=min(t),
-    #     y0=y0,
-    #     x1=max(t),
-    #     y1=y0,
-    #     line=dict(color="orange", width=2, dash="dash"),
-    # ))
-
-    # fig.add_shape(go.layout.Shape(
-    #     type="line",
-    #     x0=min(t),
-    #     y0=y_tau,
-    #     x1=max(t),
-    #     y1=y_tau,
-    #     line=dict(color="gray", width=2, dash="dash"),
-    # ))
+    return y
 
 
-    fig.update_layout(title=f'{criteria} - {controller_type} Controller',
-                    xaxis_title='Time',
-                    yaxis_title='Process Output',
-                    template="plotly_white",
-                    autosize=True,
-                    # annotations=[
-                    #     # dict(x=t0, y=y0, text=f"t0", showarrow=True, arrowhead=7),
-                    #     # dict(x=td, y=y0, text=f"td = {td:.2f}", showarrow=True, arrowhead=7),
-                    #     # dict(x=t1, y=y_tau, text=f"t1 = {t1:.2f}, y_tau = {y_tau:.2f}", showarrow=True, arrowhead=7),
-                    #     # dict(x=t1, y=y_inf, text=f"y_inf = {y_inf:.2f}", showarrow=True, arrowhead=7),
-                    #     dict(x=0.95, y=0.4, xref="paper", yref="paper",
-                    #         text=f"theta_est : {theta_est:.2f}<br>Kp_est: {Kp_est:.2f}<br>taun_est: {taun_est:.2f}<br>tau1_est: {tau1_est:.2f}<br>tau2_est: {tau2_est:.2f}",
-                    #         showarrow=False)
-                    # ]
-                    annotations = [annotation],
-                    )
-
-    # fig.show()  taun_est, tau1_est, tau2_est,  
-    global tuning_graph
-    tuning_graph = fig
-    # Convert the Plotly figure to an HTML div string
-    tuning_graph_html = fig.to_html(full_html=False)
-
-    return JsonResponse({'tuning_graph_html': tuning_graph_html})
+def objective_function(PID_params, process_params, time, ysp, controller_type, modeling_type, criteria, dt):
+    y = closed_loop_response(PID_params, process_params, time, ysp, controller_type, modeling_type, dt)
+    offset = ysp - y
+    
+    if criteria == "ISE":
+        return np.sum(offset**2) * dt
+    elif criteria == "IAE":
+        return np.sum(np.abs(offset)) * dt
+    elif criteria == "ITAE":
+        return np.sum(time * np.abs(offset)) * dt
+    else:
+        raise ValueError(f"Unknown criteria: {criteria}")
     # plt.plot(time, y_opt, label=f"{controller_type} Controller")
 
     # plt.plot(time, ysp, color="r", linestyle="--", label="Setpoint")
@@ -2278,3 +2249,4 @@ def report(request):
     # Generate a report based on previous results
     report_content = "Report generated..."
     return JsonResponse({'report': report_content})
+

@@ -1372,54 +1372,6 @@ const Step5 = ({ navigation, route }) => {
     </SafeAreaView>
   );
 };
-// Create Stack Navigator
-const Stack = createStackNavigator();
-
-export default function App() {
-  return (
-    <NavigationContainer>
-      <Stack.Navigator 
-        initialRouteName="Uploader"
-        screenOptions={{
-          headerStyle: {
-            backgroundColor: '#3498db',
-          },
-          headerTintColor: '#fff',
-          headerTitleStyle: {
-            fontWeight: 'bold',
-          },
-        }}
-      >
-        <Stack.Screen 
-          name="Uploader" 
-          component={ImageUploaderScreen} 
-          options={{ title: 'Step 1: Image Upload' }} 
-        />
-        <Stack.Screen 
-          name="Step2" 
-          component={Step2} 
-          options={{ title: 'Step 2: Extraction Results' }} 
-        />
-        <Stack.Screen 
-          name="Step3" 
-          component={Step3} 
-          options={{ title: 'Step 3: System Identification' }} 
-        />
-        <Stack.Screen 
-          name="Step4" 
-          component={Step4} 
-          options={{ title: 'Step 4: Controller Tuning' }} 
-        />
-        <Stack.Screen 
-          name="Step5" 
-          component={Step5} 
-          options={{ title: 'Step 5: Report' }} 
-        />
-      </Stack.Navigator>
-    </NavigationContainer>
-  );
-}
-
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,

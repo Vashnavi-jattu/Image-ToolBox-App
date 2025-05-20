@@ -1,21 +1,34 @@
+# urls.py
 from django.urls import path
-from api import views
 from .views import hello_api
+from . import views
+from .views import upload_image
+from .views import identify_foptd
+from  .views import identify_soptd
+from .views import identify_integrator_delay
+from .views import identify_inverse_response_tf
+from .views import simulate_pid
+from .views import simulate_pi
+from .views import simulate_p
+from .views import simulate_close_loop_response
+from .views import get_variables_report
+from .views import tuning
+#from api.views import GeneratePDF
+
 
 urlpatterns = [
     path('api/hello/', hello_api),  # This should match the Axios call
-    path("control_tuning_imagebased/", views.control_tuning_imagebased),
-
-    path('upload-image/', views.upload_image),
-    path('extract_data/', views.extract_data),
-    path('identify_foptd/', views.identify_foptd),
-    path('identify_soptd/', views.identify_soptd),
-    path('identify_integrator_delay/', views.identify_integrator_delay),
-    path('identify_inverse_response_tf/', views.identify_inverse_response_tf),
-    path('simulate_pid/', views.simulate_pid),
-    path('simulate_pi/', views.simulate_pi),
-    path('simulate_p/', views.simulate_p),
-    path('simulate_close_loop_response/', views.simulate_close_loop_response),
-    path('get_variables_report/', views.get_variables_report),
-    path('tuning/', views.tuning, name='tuning'),
+    path('api/upload/', upload_image, name='upload_image'),
+    path('api/identify_foptd/', identify_foptd),
+    path('api/identify_soptd/', identify_soptd),
+    path('api/identify_integrator_delay/', identify_integrator_delay),
+    path('api/simulate_close_loop_response/', simulate_close_loop_response),
+    path('api/get_variables_report/', get_variables_report),
+    #path('api/generate-pdf/', GeneratePDF.as_view(), name='generate-pdf'),
+    # the follwoing are not used in the app
+    path('api/tuning/', tuning, name='tuning'),
+    path('api/identify_inverse_response_tf/', identify_inverse_response_tf),
+    path('api/simulate_pid/', simulate_pid),
+    path('api/simulate_pi/', simulate_pi),
+    path('api/simulate_p/', simulate_p),
 ]
