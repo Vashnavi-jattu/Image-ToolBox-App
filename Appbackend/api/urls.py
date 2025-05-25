@@ -13,11 +13,12 @@ from .views import simulate_p
 from .views import simulate_close_loop_response
 from .views import get_variables_report
 from .views import tuning
+
 #from api.views import GeneratePDF
 
 
 urlpatterns = [
-    path('api/hello/', hello_api),  # This should match the Axios call
+     # This should match the Axios call
     path('api/upload/', upload_image, name='upload_image'),
     path('api/identify_foptd/', identify_foptd),
     path('api/identify_soptd/', identify_soptd),
@@ -26,9 +27,5 @@ urlpatterns = [
     path('api/get_variables_report/', get_variables_report),
     #path('api/generate-pdf/', GeneratePDF.as_view(), name='generate-pdf'),
     # the follwoing are not used in the app
-    path('api/tuning/', tuning, name='tuning'),
-    path('api/identify_inverse_response_tf/', identify_inverse_response_tf),
-    path('api/simulate_pid/', simulate_pid),
-    path('api/simulate_pi/', simulate_pi),
-    path('api/simulate_p/', simulate_p),
+    
 ]

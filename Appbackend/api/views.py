@@ -1,5 +1,5 @@
 from django.http import JsonResponse
-
+import random
 
 
 from django.shortcuts import render
@@ -9,9 +9,10 @@ import json
 from scipy.optimize import curve_fit, minimize
 import math
 from scipy.signal import TransferFunction as TF, lsim
+import base64
 import cv2
-import pandas as pd
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 from sklearn.cluster import KMeans
 from scipy.interpolate import interp1d
@@ -22,11 +23,13 @@ from scipy.integrate import cumulative_trapezoid
 from collections import deque
 import traceback
 import os
+import logging
 
 # Define global variable
 # global time_data
 # global pv_data
 # Create your views here.
+random.seed(10)  # For reproducibility
 pv_data = None
 op_data = None
 criteria = None
@@ -43,7 +46,7 @@ print(modeling_type)
 
 def hello_api(request):
     return JsonResponse({"message": "Hello from Django!"})
-
+@csrf_exempt
 @csrf_exempt
 def upload_image(request):
     if request.method == 'POST':
@@ -68,6 +71,70 @@ def upload_image(request):
             nparr = np.frombuffer(image_bytes, np.uint8)
             img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             
+            if img is None:
+                return JsonResponse({'error': 'Failed to decode image'}, status=400)
+
+            # ===== COMPREHENSIVE IMAGE ENHANCEMENT PIPELINE =====
+            # 1. Initial Upsampling (INTER_CUBIC provides good quality/speed balance)
+            upscaled_img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            
+            # 2. Super Resolution (if model is available)
+            try:
+                sr = cv2.dnn_superres.DnnSuperResImpl_create()
+                model_path = os.path.join(settings.BASE_DIR, 'EDSR_x4.pb')  # Adjust path as needed
+                if os.path.exists(model_path):
+                    sr.readModel(model_path)
+                    # Use CPU if CUDA not available (fallback)
+                    try:
+                        sr.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+                        sr.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+                    except:
+                        sr.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+                        sr.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+                    sr.setModel("edsr", 4)
+                    img = sr.upsample(upscaled_img)
+                else:
+                    img = upscaled_img
+                    print("Super-resolution model not found, using cubic upsampling")
+            except Exception as e:
+                print(f"Super-resolution failed: {str(e)}")
+                img = upscaled_img
+
+            """ # 3. Noise Reduction with Median Blur (kernel size 11)
+            denoised_img = cv2.medianBlur(img, 11)
+            
+            # 4. Sharpening filter (added step)
+            kernel = np.array([[-1, -1, -1],
+                               [-1,  9, -1],
+                               [-1, -1, -1]])
+            sharpened_img = cv2.filter2D(denoised_img, -1, kernel)
+            
+            # 5. LAB Color Space Processing for Contrast
+            lab_img = cv2.cvtColor(sharpened_img, cv2.COLOR_BGR2LAB)
+            l_channel, a_channel, b_channel = cv2.split(lab_img)
+            
+            # 6. CLAHE for Adaptive Contrast Enhancement
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+            enhanced_l = clahe.apply(l_channel)
+            
+            # 7. Merge channels and convert back to BGR
+            enhanced_lab = cv2.merge((enhanced_l, a_channel, b_channel))
+            enhanced_img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+            
+            # 8. Gamma Correction for Dark Areas
+            gamma = 0.7
+            inv_gamma = 1.0 / gamma
+            table = np.array([((i / 255.0) ** inv_gamma) * 255
+                            for i in np.arange(0, 256)]).astype("uint8")
+            contrast_boosted = cv2.LUT(enhanced_img, table)
+            
+            # 9. Final Brightness/Contrast Adjustment
+            final_img = cv2.convertScaleAbs(contrast_boosted, alpha=1.8, beta=20)
+            
+            # Use the fully processed image for extraction
+            img = final_img """
+            # ===== END ENHANCEMENT PIPELINE =====
+            
             # Determine which color corresponds to which variable
             variable_to_color = {
                 'OP': op_color,
@@ -84,20 +151,18 @@ def upload_image(request):
                 elif color == 'red':
                     line_red_name = var_name
             
-            # Extract data from image
+            # Extract data from enhanced image
             red_df, red_df_scaled, green_df, green_df_scaled, blue_df, blue_df_scaled = extract_data(
                 img, y_min, y_max, x_min, x_max
             )
             
             # Store data globally if needed
-            
             if line_blue_name == 'PV':
                 pv_data = blue_df_scaled
                 op_data = red_df_scaled
             elif line_blue_name == 'OP':
                 pv_data = red_df_scaled
                 op_data = blue_df_scaled
-            
             
             # Generate plot
             graph_html = plot_extract_data(
@@ -112,7 +177,17 @@ def upload_image(request):
                 'status': 'success',
                 'graph_html': graph_html,
                 'pv_data': pv_data.to_dict() if pv_data is not None else None,
-                'op_data': op_data.to_dict() if op_data is not None else None
+                'op_data': op_data.to_dict() if op_data is not None else None,
+                'processing_steps': [
+                    '2x cubic upsampling',
+                    '4x super-resolution (if model available)',
+                    'median blur denoising',
+                    'sharpening filter',
+                    'LAB contrast enhancement',
+                    'CLAHE adaptive equalization',
+                    'gamma correction',
+                    'final contrast/brightness adjustment'
+                ]
             }
             
             return JsonResponse(response_data)
@@ -121,8 +196,149 @@ def upload_image(request):
             return JsonResponse({'error': str(e)}, status=500)
     
     return JsonResponse({'error': 'Only POST requests are allowed'}, status=405)
+# good so far
+""" @csrf_exempt
+def upload_image(request):
+    if request.method == 'POST':
+        try:
+            # Get image file
+            if 'image' not in request.FILES:
+                return JsonResponse({'error': 'No image provided'}, status=400)
+            
+            image = request.FILES['image']
+            
+            # Get parameters from POST data
+            params = json.loads(request.POST.get('params', '{}'))
+            y_min = float(params.get('y_min', 0))
+            y_max = float(params.get('y_max', 1))
+            x_min = float(params.get('x_min', 0))
+            x_max = float(params.get('x_max', 1))
+            op_color = params.get('op_color', 'red')
+            pv_color = params.get('pv_color', 'blue')
+            
+            # Process the image
+            image_bytes = image.read()
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            if img is None:
+                return JsonResponse({'error': 'Failed to decode image'}, status=400)
 
+            # ===== COMPREHENSIVE IMAGE ENHANCEMENT PIPELINE =====
+            # 1. Initial Upsampling (INTER_CUBIC provides good quality/speed balance)
+            upscaled_img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            
+            # 2. Super Resolution (if model is available)
+            try:
+                sr = cv2.dnn_superres.DnnSuperResImpl_create()
+                model_path = os.path.join(settings.BASE_DIR, 'EDSR_x4.pb')  # Adjust path as needed
+                if os.path.exists(model_path):
+                    sr.readModel(model_path)
+                    # Use CPU if CUDA not available (fallback)
+                    try:
+                        sr.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+                        sr.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+                    except:
+                        sr.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
+                        sr.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
+                    sr.setModel("edsr", 4)
+                    img = sr.upsample(upscaled_img)
+                else:
+                    img = upscaled_img
+                    print("Super-resolution model not found, using cubic upsampling")
+            except Exception as e:
+                print(f"Super-resolution failed: {str(e)}")
+                img = upscaled_img
 
+            # 3. Noise Reduction with Median Blur (kernel size 11)
+            denoised_img = cv2.medianBlur(img, 11)
+            
+            # 4. LAB Color Space Processing for Contrast
+            lab_img = cv2.cvtColor(denoised_img, cv2.COLOR_BGR2LAB)
+            l_channel, a_channel, b_channel = cv2.split(lab_img)
+            
+            # 5. CLAHE for Adaptive Contrast Enhancement
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+            enhanced_l = clahe.apply(l_channel)
+            
+            # 6. Merge channels and convert back to BGR
+            enhanced_lab = cv2.merge((enhanced_l, a_channel, b_channel))
+            enhanced_img = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2BGR)
+            
+            # 7. Gamma Correction for Dark Areas
+            gamma = 0.7
+            inv_gamma = 1.0 / gamma
+            table = np.array([((i / 255.0) ** inv_gamma) * 255
+                            for i in np.arange(0, 256)]).astype("uint8")
+            contrast_boosted = cv2.LUT(enhanced_img, table)
+            
+            # 8. Final Brightness/Contrast Adjustment
+            final_img = cv2.convertScaleAbs(contrast_boosted, alpha=1.8, beta=20)
+            
+            # Use the fully processed image for extraction
+            img = final_img
+            # ===== END ENHANCEMENT PIPELINE =====
+            
+            # Determine which color corresponds to which variable
+            variable_to_color = {
+                'OP': op_color,
+                'PV': pv_color,
+            }
+            global pv_data
+            global op_data
+            
+            line_blue_name = None
+            line_red_name = None
+            for var_name, color in variable_to_color.items():
+                if color == 'blue':
+                    line_blue_name = var_name
+                elif color == 'red':
+                    line_red_name = var_name
+            
+            # Extract data from enhanced image
+            red_df, red_df_scaled, green_df, green_df_scaled, blue_df, blue_df_scaled = extract_data(
+                img, y_min, y_max, x_min, x_max
+            )
+            
+            # Store data globally if needed
+            if line_blue_name == 'PV':
+                pv_data = blue_df_scaled
+                op_data = red_df_scaled
+            elif line_blue_name == 'OP':
+                pv_data = red_df_scaled
+                op_data = blue_df_scaled
+            
+            # Generate plot
+            graph_html = plot_extract_data(
+                y_min, y_max, x_min, x_max,
+                red_df, red_df_scaled, line_red_name,
+                green_df, green_df_scaled,
+                blue_df, blue_df_scaled, line_blue_name
+            )
+            
+            # Prepare data for response
+            response_data = {
+                'status': 'success',
+                'graph_html': graph_html,
+                'pv_data': pv_data.to_dict() if pv_data is not None else None,
+                'op_data': op_data.to_dict() if op_data is not None else None,
+                'processing_steps': [
+                    '2x cubic upsampling',
+                    '4x super-resolution (if model available)',
+                    'median blur denoising',
+                    'LAB contrast enhancement',
+                    'CLAHE adaptive equalization',
+                    'gamma correction',
+                    'final contrast/brightness adjustment'
+                ]
+            }
+            
+            return JsonResponse(response_data)
+            
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=500)
+    
+    return JsonResponse({'error': 'Only POST requests are allowed'}, status=405) """
 
 def get_hsv_ranges(image, hsv_image, k=3, margin=20):
     """
@@ -189,9 +405,9 @@ def extract_data(image, y_min=0, y_max=1, x_min=0, x_max=1):
     # blue_upper = np.array([140, 255, 255])
 
     # Define HSV ranges for red and blue
-    lower_red1, upper_red1 = np.array([0, 120, 70]), np.array([10, 255, 255])
-    lower_red2, upper_red2 = np.array([170, 120, 70]), np.array([180, 255, 255])
-    lower_blue, upper_blue = np.array([100, 150, 50]), np.array([140, 255, 255])
+    lower_red1, upper_red1 = np.array([0, 100, 50]), np.array([10, 255, 255])
+    lower_red2, upper_red2 = np.array([160, 100, 50]), np.array([180, 255, 255])
+    lower_blue, upper_blue = np.array([100, 100, 50]), np.array([140, 255, 255])
 
     # Create masks for red and blue
     red_mask = cv2.inRange(hsv_image, lower_red1, upper_red1) + cv2.inRange(hsv_image, lower_red2, upper_red2)
@@ -2154,6 +2370,7 @@ def closed_loop_response(PID_params, process_params, time, ysp, controller_type,
         elif controller_type == "PID":
             derivative = (e[i] - e[i-1])/dt if i > 1 else 0
             u[i] = Kc * e[i] + Ki * integral + Kd * derivative
+            # u[i] = Kc * e[i] + Ki * integral + Kd * 1  #derivative
         
         # Process model with time delay
         u_delayed.append(u[i])
