@@ -472,6 +472,280 @@ function Step2({ route, navigation }) {
   );
 }
 
+const Step3 = ({ navigation, route }) => {
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('Select Model');
+  const [isLoading, setIsLoading] = useState(false);
+  //const [modelResults, setModelResults] = useState(null);
+  const [graphHtml, setGraphHtml] = useState('');
+  const [error, setError] = useState(null);
+  const [modelResults, setModelResults] = useState({});
+
+  const params = route.params || {};
+  const { parameters = {}, graphData = '' } = params;
+
+  const handleModelSelect = async (model) => {
+    setSelectedModel(model);
+    setShowDropdown(false);
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      let endpoint = '';
+      
+      if (model === 'FOPTD Identification') {
+        endpoint = 'identify_foptd';
+      } else if (model === 'SOPTD Identification') {
+        endpoint = 'identify_soptd';
+      } else if (model === 'Integrator Plus Dead Time (IPDT)') {
+        endpoint = 'identify_integrator_delay';
+      }
+
+      const response = await axios.post(
+        `${API_URL}:8000/api/${endpoint}/`,
+        {
+          parameters: parameters,
+          graph_data: graphData
+        },
+        {
+          timeout: 30000
+        }
+      );
+     
+      if (!response.data) {
+        throw new Error('No data received from server');
+      }
+
+      setModelResults(response.data);
+      setGraphHtml(response.data.modeling_graph_html || '');
+      
+    } catch (error) {
+      console.error('Model identification error:', error);
+      setError(error.message || 'Failed to perform model identification');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Function to render fitted parameters based on model type
+  const renderFittedParameters = () => {
+ if (!modelResults) return null;
+
+  // Extract parameters from different possible response structures
+  const params = modelResults.parameters || 
+                modelResults.modeling_params || 
+                {
+                  Kp: modelResults.Kp_fit || modelResults.Kp_est,
+                  tau: modelResults.tau_fit || modelResults.tau_est,
+                  zeta: modelResults.zeta_est,
+                  theta: modelResults.theta_fit || modelResults.theta_est
+                };
+
+  // Format value with consistent decimal places
+  const formatValue = (value) => {
+    if (value === undefined || value === null) return 'N/A';
+    if (typeof value === 'number') return value.toFixed(2);
+    return value;
+  };
+
+
+  if (selectedModel === 'FOPTD Identification') {
+    return (
+      <View style={styles.fittedParamsContainer}>
+        <Text style={styles.sectionSubtitle}>Fitted Parameters:</Text>
+        <View style={styles.parametersContainer}>
+          <View style={styles.parameterRow}>
+            <Text style={styles.parameterLabel}>Kp (Gain):</Text>
+            <Text style={styles.parameterValue}>
+              {params[0]?.toFixed(4) || 'N/A'}
+            </Text>
+          </View>
+          <View style={styles.parameterRow}>
+            <Text style={styles.parameterLabel}>τ (Time Constant):</Text>
+            <Text style={styles.parameterValue}>
+              {params[1]?.toFixed(4) || 'N/A'}
+            </Text>
+          </View>
+          <View style={styles.parameterRow}>
+            <Text style={styles.parameterLabel}>θ (Time Delay):</Text>
+            <Text style={styles.parameterValue}>
+              {params[2]?.toFixed(4) || 'N/A'}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  } else if (selectedModel === 'SOPTD Identification') {
+    return (
+      <View style={styles.fittedParamsContainer}>
+        <Text style={styles.sectionSubtitle}>Fitted Parameters:</Text>
+        <View style={styles.parametersContainer}>
+          <View style={styles.parameterRow}>
+            <Text style={styles.parameterLabel}>Kp (Gain):</Text>
+            <Text style={styles.parameterValue}>
+              {formatValue(params.Kp)}
+            </Text>
+          </View>
+          <View style={styles.parameterRow}>
+            <Text style={styles.parameterLabel}>τ (Time Constant):</Text>
+            <Text style={styles.parameterValue}>
+              {formatValue(params.tau)}
+            </Text>
+          </View>
+          <View style={styles.parameterRow}>
+            <Text style={styles.parameterLabel}>ζ (Damping Ratio):</Text>
+            <Text style={styles.parameterValue}>
+              {formatValue(params.zeta)}
+            </Text>
+          </View>
+          <View style={styles.parameterRow}>
+            <Text style={styles.parameterLabel}>θ (Time Delay):</Text>
+            <Text style={styles.parameterValue}>
+              {formatValue(params.theta)}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  
+  } else if (selectedModel === 'Integrator Plus Dead Time (IPDT)') {
+    return (
+      <View style={styles.fittedParamsContainer}>
+        <Text style={styles.sectionSubtitle}>Fitted Parameters:</Text>
+        <View style={styles.parametersContainer}>
+          <View style={styles.parameterRow}>
+            <Text style={styles.parameterLabel}>Kp (Gain):</Text>
+            <Text style={styles.parameterValue}>
+              {params[0]?.toFixed(4) || 'N/A'}
+            </Text>
+          </View>
+          <View style={styles.parameterRow}>
+            <Text style={styles.parameterLabel}>θ (Time Delay):</Text>
+            <Text style={styles.parameterValue}>
+              {params[1]?.toFixed(4) || 'N/A'}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  }
+  return null;
+};
+
+  return (
+  <SafeAreaView style={styles.safeArea}>
+    <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <View style={styles.container}>
+        <StepIndicator currentStep={3} totalSteps={5} />
+        
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>System Identification</Text>
+          </View>
+          <View style={styles.cardBody}>
+            {error && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
+            <View style={styles.dropdownContainer}>
+              <TouchableOpacity 
+                style={styles.dropdownButton}
+                onPress={() => setShowDropdown(!showDropdown)}
+                disabled={isLoading}
+              >
+                <Text style={styles.dropdownButtonText}>{selectedModel}</Text>
+                <Icon 
+                  name={showDropdown ? "chevron-up" : "chevron-down"} 
+                  size={20} 
+                  color="#fff" 
+                />
+              </TouchableOpacity>
+
+              {showDropdown && (
+                <View style={styles.dropdownMenu}>
+                  <TouchableOpacity 
+                    style={styles.dropdownItem}
+                    onPress={() => handleModelSelect('FOPTD Identification')}
+                  >
+                    <Text>FOPTD Identification</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.dropdownItem}
+                    onPress={() => handleModelSelect('SOPTD Identification')}
+                  >
+                    <Text>SOPTD Identification</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.dropdownItem}
+                    onPress={() => handleModelSelect('Integrator Plus Dead Time (IPDT)')}
+                  >
+                    <Text>Integrator Plus Dead Time (IPDT)</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+
+            {isLoading && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#3498db" />
+                <Text style={styles.loadingText}>Identifying model parameters...</Text>
+              </View>
+            )}
+
+            {/* Results Section - This was missing */}
+            {Object.keys(modelResults).length > 0 && (
+              <View style={styles.resultsContainer}>
+                <Text style={styles.resultsTitle}>{selectedModel} Results</Text>
+                
+                {/* Graph Display */}
+                {graphHtml ? (
+                  <WebView
+                    originWhitelist={['*']}
+                    source={{ html: graphHtml }}
+                    style={styles.modelGraph}
+                  />
+                ) : (
+                  <Text style={styles.noGraphText}>No graph data available</Text>
+                )}
+
+                {/* Parameters Display */}
+                {renderFittedParameters()}
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.navButtonsContainer}>
+          <TouchableOpacity 
+            style={styles.prevButton} 
+            onPress={() => navigation.goBack()}
+            disabled={isLoading}
+          >
+            <Text style={styles.buttonText}>PREVIOUS</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.nextButton, Object.keys(modelResults).length === 0 && styles.disabledButton]} 
+            onPress={() => navigation.navigate('Step4', {
+              ...route.params,
+              modelType: selectedModel,
+              modelParams: modelResults.modeling_params || [],
+              modelParamNames: modelResults.modeling_params_names || [],
+              modelingGraphHtml: graphHtml
+            })}
+            disabled={Object.keys(modelResults).length === 0 || isLoading}
+          >
+            <Text style={styles.buttonText}>NEXT</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
+  </SafeAreaView>
+);
+};
+
+
 // Create Stack Navigator
 const Stack = createStackNavigator();
 
