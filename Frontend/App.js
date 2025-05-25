@@ -746,6 +746,243 @@ const Step3 = ({ navigation, route }) => {
 };
 
 
+const Step4 = ({ navigation, route }) => {
+  const { modelParams, modelType, graphHtml: initialGraphHtml } = route.params || {};
+  const [showCriteriaDropdown, setShowCriteriaDropdown] = useState(false);
+  const [selectedCriteria, setSelectedCriteria] = useState('Select Criteria');
+  const [selectedController, setSelectedController] = useState('');
+  const [activeSubmenu, setActiveSubmenu] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [tuningResults, setTuningResults] = useState(null);
+  const [graphHtml, setGraphHtml] = useState(initialGraphHtml || '');
+  const [error, setError] = useState(null);
+   const [tuningHistory, setTuningHistory] = useState([]); // Store all tuning results
+
+  const criteriaOptions = [
+    { name: 'ISE', controllers: ['PID', 'PI', 'P'] },
+    { name: 'IAE', controllers: ['PID', 'PI', 'P'] },
+    { name: 'ITAE', controllers: ['PID', 'PI', 'P'] },
+    { name: 'Inverse Response', controllers: ['Identify'] }
+
+  ];
+
+  // Model type mapping
+  const modelTypeMapping = {
+    'FOPTD Identification': 'First-Order Plus Dead Time (FOPDT)',
+    'SOPTD Identification': 'Second-Order Plus Dead Time (SOPDT)',
+    'Integrator Plus Dead Time (IPDT)': 'Integrator Plus Dead Time (IPDT)'
+  };
+
+  const handleCriteriaSelect = (criteria) => {
+    setSelectedCriteria(criteria);
+    setActiveSubmenu(activeSubmenu === criteria ? null : criteria);
+  };
+
+  const handleControllerSelect = async (criteria, controller) => {
+    setSelectedController(`${criteria}_${controller}`);
+    setShowCriteriaDropdown(false);
+    setActiveSubmenu(null);
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      let endpoint = '';
+      let payload = new FormData();  // Use FormData instead of raw JSON
+
+      if (criteria === 'Inverse Response' && controller === 'Identify') {
+        endpoint = 'identify_inverse_response_tf';
+      } else {
+        endpoint = 'simulate_close_loop_response';
+        payload.append('criteria', criteria);
+        payload.append('controller_type', controller);
+        payload.append('modeling_type', modelType); // Make sure modelType is defined
+        
+        // Include modeling parameters if available
+        if (modelParams) {
+          payload.append('modeling_params', JSON.stringify(modelParams));
+        }
+      }
+      
+      console.log('Sending payload:', {
+        criteria: criteria,
+        controller_type: controller,
+        modeling_type: modelType,
+        modeling_params: modelParams
+      });
+
+      const response = await axios.post(
+        `${API_URL}:8000/api/${endpoint}/`,
+        payload,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',  // Change content type
+          },
+          timeout: 30000
+        }
+      );
+
+      if (!response.data) {
+        throw new Error('No data received from server');
+      }
+      const newTuningResult = {
+      criteria,
+      controller,
+      parameters: response.data.parameters,
+      parameter_names: response.data.parameter_names,
+      graphHtml: response.data.modeling_graph_html || response.data.tuning_graph_html || ''
+    };
+
+     setTuningResults(newTuningResult);
+     setGraphHtml(newTuningResult.graphHtml);
+     setTuningHistory(prev => [...prev, newTuningResult]); // Add to history
+      
+    } catch (error) {
+      console.error('Tuning error:', error);
+      setError(error.response?.data?.error || error.message || 'Failed to perform controller tuning');
+    } finally {
+      setIsLoading(false);
+    }
+};
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.container}>
+          <StepIndicator currentStep={4} totalSteps={5} />
+          
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Controller Tuning</Text>
+            </View>
+            <View style={styles.cardBody}>
+              {error && (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              )}
+
+              <View style={styles.dropdownContainer}>
+                <TouchableOpacity 
+                  style={styles.dropdownButton}
+                  onPress={() => setShowCriteriaDropdown(!showCriteriaDropdown)}
+                  disabled={isLoading}
+                >
+                  <Text style={styles.dropdownButtonText}>
+                    {selectedController || selectedCriteria}
+                  </Text>
+                  <Icon 
+                    name={showCriteriaDropdown ? "chevron-up" : "chevron-down"} 
+                    size={20} 
+                    color="#fff" 
+                  />
+                </TouchableOpacity>
+
+                {showCriteriaDropdown && (
+                  <View style={styles.dropdownMenu}>
+                    {criteriaOptions.map((criteria) => (
+                      <View key={criteria.name} style={styles.submenuContainer}>
+                        <TouchableOpacity
+                          style={styles.criteriaItem}
+                          onPress={() => handleCriteriaSelect(criteria.name)}
+                        >
+                          <Text>{criteria.name}</Text>
+                          <Icon 
+                            name={activeSubmenu === criteria.name ? "chevron-up" : "chevron-down"} 
+                            size={16} 
+                            color="#333" 
+                          />
+                        </TouchableOpacity>
+                        
+                        {activeSubmenu === criteria.name && (
+                          <View style={styles.submenu}>
+                            {criteria.controllers.map((controller) => (
+                              <TouchableOpacity
+                                key={`${criteria.name}_${controller}`}
+                                style={styles.submenuItem}
+                                onPress={() => handleControllerSelect(criteria.name, controller)}
+                              >
+                                <Text>{controller}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {isLoading && (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#3498db" />
+                  <Text style={styles.loadingText}>Calculating optimal parameters...</Text>
+                </View>
+              )}
+
+              {tuningResults && (
+                <View style={styles.resultsContainer}>
+                  <Text style={styles.resultsTitle}>
+                    {selectedController.split('_')[0]} - {selectedController.split('_')[1]} Results
+                  </Text>
+                  
+                  {graphHtml ? (
+                    <WebView
+                      originWhitelist={['*']}
+                      source={{ html: graphHtml }}
+                      style={styles.modelGraph}
+                    />
+                  ) : (
+                    <Text style={styles.noGraphText}>No tuning results available</Text>
+                  )}
+
+                  {tuningResults.parameters && (
+                    <View style={styles.parametersContainer}>
+                      {tuningResults.parameters.map((param, index) => (
+                        <View key={index} style={styles.parameterRow}>
+                          <Text style={styles.parameterLabel}>
+                            {tuningResults.parameter_names?.[index] || `Parameter ${index + 1}`}:
+                          </Text>
+                          <Text style={styles.parameterValue}>{param.toFixed(2)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.navButtonsContainer}>
+            <TouchableOpacity 
+              style={styles.prevButton} 
+              onPress={() => navigation.goBack()}
+              disabled={isLoading}
+            >
+              <Text style={styles.buttonText}>PREVIOUS</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.nextButton, (!tuningResults || isLoading) && styles.disabledButton]} 
+              
+              // When navigating to Step5:
+              onPress={() => navigation.navigate('Step5', {
+              ...route.params, // All previous data
+              controllerType: selectedController.split('_')[1],
+              criteria: selectedController.split('_')[0],
+              tuningParams: tuningResults?.parameters || [],
+              tuningParamNames: tuningResults?.parameter_names || [],
+              tuningGraphHtml: graphHtml,
+              tuningHistory: tuningHistory // Pass the entire history
+            })}
+              disabled={!tuningResults || isLoading}
+            >
+              <Text style={styles.buttonText}>NEXT</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
 // Create Stack Navigator
 const Stack = createStackNavigator();
 
