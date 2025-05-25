@@ -40,7 +40,7 @@ INSTALLED_APPS = [
     'corsheaders',
     
 ]
-ALLOWED_HOSTS = ['localhost', '192.168.0.125','127.0.0.1','192.168.1.162']
+ALLOWED_HOSTS = ['localhost', '192.168.0.125','127.0.0.1','192.168.1.162','172.28.85.218','172.20.10.4']
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
