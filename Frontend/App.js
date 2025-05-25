@@ -983,6 +983,396 @@ const Step4 = ({ navigation, route }) => {
     </SafeAreaView>
   );
 };
+const Step5 = ({ navigation, route }) => {
+  const {
+    graphHtml = '',
+    parameters = {
+      x_min: 0,
+      x_max: 0,
+      y_min: 0,
+      y_max: 0,
+      op_color: '',
+      pv_color: ''
+    },
+    modelType = '',
+    modelParams = [],
+    modelParamNames = [],
+    modelingGraphHtml = '',
+    controllerType = '',
+    criteria = '',
+    tuningParams = [],
+    tuningParamNames = [],
+    tuningGraphHtml = '',
+    tuningHistory = [],
+    theta_fit = 0,
+    tau_fit = 0,
+    Kp_fit = 0,
+  } = route.params || {};
+
+  const generateHTML = () => {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          body { font-family: Arial; padding: 20px; color: #333; background-color: #f5f5f5; }
+          h1 { color: #2c3e50; text-align: center; }
+          .container { padding: 10px; }
+          .card { background-color: white; border-radius: 8px; margin-bottom: 20px; shadow-color: #000; shadow-offset: { width: 0, height: 2 }; shadow-opacity: 0.1; shadow-radius: 4; elevation: 3; }
+          .card-header { background-color: #f8f9fa; padding: 15px; border-bottom-width: 1px; border-bottom-color: #ddd; border-top-left-radius: 8px; border-top-right-radius: 8px; }
+          .card-title { font-size: 18px; font-weight: bold; }
+          .card-body { padding: 15px; }
+          .section-title { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #3498db; }
+          .section-subtitle { font-size: 15px; font-weight: bold; margin-bottom: 8px; }
+          .parameters-grid { flex-direction: row; flex-wrap: wrap; justify-content: space-between; margin-bottom: 15px; }
+          .parameter-item { width: 48%; margin-bottom: 8px; }
+          .parameter-label { font-weight: bold; color: #7f8c8d; }
+          .parameter-value { color: #333; }
+          .webview { height: 300px; width: 100%; background-color: transparent; }
+          .modelGraph { height: 250px; width: 100%; background-color: transparent; }
+          .graph-container { margin-vertical: 20px; }
+          .graph-title { font-size: 14px; margin-bottom: 5px; text-align: center; }
+          .parameters-container { margin-bottom: 15px; }
+          .parameter-row { flex-direction: row; margin-bottom: 6px; }
+          .no-data { color: #95a5a6; font-style: italic; }
+          .tuningResultContainer { margin-bottom: 20px; }
+          .footer { margin-top: 30px; text-align: center; color: #95a5a6; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <h1>Process Control Report</h1>
+        <div class="container">
+          ${generateReportContent()}
+          <div class="footer">
+            Report generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
+  const generateReportContent = () => {
+    return `
+      <!-- Extraction Results -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Extraction Results</div>
+        </div>
+        <div class="card-body">
+          <div class="section-title">Extracted Data Graph</div>
+          ${graphHtml || '<p class="no-data">No graph available</p>'}
+          
+          <div class="section-title">Used Parameters</div>
+          <div class="parameters-grid">
+            ${generateParameterItems()}
+          </div>
+        </div>
+      </div>
+      
+      <!-- System Identification -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">System Identification</div>
+        </div>
+        <div class="card-body">
+          <div class="section-subtitle">Model Type: ${modelType}</div>
+          ${generateModelParameters()}
+          ${modelingGraphHtml || '<p class="no-data">No modeling graph available</p>'}
+        </div>
+      </div>
+      
+      <!-- Controller Tuning -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Controller Tuning Results</div>
+        </div>
+        <div class="card-body">
+          ${generateTuningHistory()}
+        </div>
+      </div>
+    `;
+  };
+
+  const generateParameterItems = () => {
+    return `
+      <div class="parameter-item">
+        <span class="parameter-label">X min:</span>
+        <span class="parameter-value">${parameters.x_min}</span>
+      </div>
+      <div class="parameter-item">
+        <span class="parameter-label">X max:</span>
+        <span class="parameter-value">${parameters.x_max}</span>
+      </div>
+      <div class="parameter-item">
+        <span class="parameter-label">Y min:</span>
+        <span class="parameter-value">${parameters.y_min}</span>
+      </div>
+      <div class="parameter-item">
+        <span class="parameter-label">Y max:</span>
+        <span class="parameter-value">${parameters.y_max}</span>
+      </div>
+      <div class="parameter-item">
+        <span class="parameter-label">OP Color:</span>
+        <span class="parameter-value">${parameters.op_color}</span>
+      </div>
+      <div class="parameter-item">
+        <span class="parameter-label">PV Color:</span>
+        <span class="parameter-value">${parameters.pv_color}</span>
+      </div>
+    `;
+  };
+
+  const generateModelParameters = () => {
+    return `
+      <div class="parameters-container">
+        <div class="parameter-row">
+          <span class="parameter-label">Kp (Gain):</span>
+          <span class="parameter-value">${Kp_fit.toFixed(4)}</span>
+        </div>
+        <div class="parameter-row">
+          <span class="parameter-label">τ (Time Constant):</span>
+          <span class="parameter-value">${tau_fit.toFixed(4)}</span>
+        </div>
+        <div class="parameter-row">
+          <span class="parameter-label">θ (Time Delay):</span>
+          <span class="parameter-value">${theta_fit.toFixed(4)}</span>
+        </div>
+        ${modelParams.map((param, index) => `
+          <div class="parameter-row">
+            <span class="parameter-label">${modelParamNames[index]}:</span>
+            <span class="parameter-value">
+              ${typeof param === 'number' ? param.toFixed(4) : param}
+            </span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  };
+
+  const generateTuningHistory = () => {
+    if (tuningHistory.length === 0) {
+      return '<p class="no-data">No tuning results available</p>';
+    }
+    
+    return tuningHistory.map((tuning, index) => `
+      <div class="tuningResultContainer">
+        <div class="section-subtitle">
+          ${tuning.controller} Controller (${tuning.criteria} Criteria)
+        </div>
+        <div class="parameters-container">
+          ${tuning.parameter_names.map((name, idx) => `
+            <div class="parameter-row">
+              <span class="parameter-label">${name}:</span>
+              <span class="parameter-value">
+                ${typeof tuning.parameters[idx] === 'number' 
+                  ? tuning.parameters[idx].toFixed(4) 
+                  : tuning.parameters[idx]}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+        ${tuning.graphHtml || '<p class="no-data">No tuning graph available</p>'}
+      </div>
+    `).join('');
+  };
+
+  const handleSavePDF = async () => {
+    try {
+      const html = generateHTML();
+      const { uri } = await Print.printToFileAsync({
+        html,
+        width: 595,
+        height: 842,
+      });
+
+      if (Platform.OS === 'android') {
+        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (permissions.granted) {
+          const newUri = await FileSystem.StorageAccessFramework.createFileAsync(
+            permissions.directoryUri,
+            `ProcessReport_${Date.now()}.pdf`,
+            'application/pdf'
+          );
+          await FileSystem.writeAsStringAsync(newUri, await FileSystem.readAsStringAsync(uri), {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          Alert.alert('Success', 'PDF saved to your Downloads folder');
+          return;
+        }
+      }
+
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: 'Save Process Report',
+      });
+
+    } catch (error) {
+      Alert.alert('Error', 'Failed to generate PDF: ' + error.message);
+      console.error(error);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <View style={styles.container}>
+          <StepIndicator currentStep={5} totalSteps={5} />
+          
+          {/* EXTRACTION RESULTS */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Extraction Results</Text>
+            </View>
+            <View style={styles.cardBody}>
+              <View style={styles.resultSection}>
+                <Text style={styles.sectionTitle}>Extracted Data Graph</Text>
+                <WebView
+                  originWhitelist={['*']}
+                  source={{ html: graphHtml }}
+                  style={styles.webview}
+                />
+              </View>
+
+              <View style={styles.parametersSection}>
+                <Text style={styles.sectionTitle}>Used Parameters</Text>
+                <View style={styles.parametersGrid}>
+                  <View style={styles.parameterItem}>
+                    <Text style={styles.parameterLabel}>X min:</Text>
+                    <Text style={styles.parameterValue}>{parameters.x_min}</Text>
+                  </View>
+                  <View style={styles.parameterItem}>
+                    <Text style={styles.parameterLabel}>X max:</Text>
+                    <Text style={styles.parameterValue}>{parameters.x_max}</Text>
+                  </View>
+                  <View style={styles.parameterItem}>
+                    <Text style={styles.parameterLabel}>Y min:</Text>
+                    <Text style={styles.parameterValue}>{parameters.y_min}</Text>
+                  </View>
+                  <View style={styles.parameterItem}>
+                    <Text style={styles.parameterLabel}>Y max:</Text>
+                    <Text style={styles.parameterValue}>{parameters.y_max}</Text>
+                  </View>
+                  <View style={styles.parameterItem}>
+                    <Text style={styles.parameterLabel}>OP Color:</Text>
+                    <Text style={styles.parameterValue}>{parameters.op_color}</Text>
+                  </View>
+                  <View style={styles.parameterItem}>
+                    <Text style={styles.parameterLabel}>PV Color:</Text>
+                    <Text style={styles.parameterValue}>{parameters.pv_color}</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* SYSTEM IDENTIFICATION */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>System Identification</Text>
+            </View>
+            <View style={styles.cardBody}>
+              <Text style={styles.sectionSubtitle}>Model Type: {modelType}</Text>
+             
+
+              {modelParams.length > 0 && (
+                <View style={styles.parametersContainer}>
+                  {modelParamNames.map((name, index) => (
+                    <View key={index} style={styles.parameterRow}>
+                      <Text style={styles.parameterLabel}>{name}:</Text>
+                      <Text style={styles.parameterValue}>
+                        {typeof modelParams[index] === 'number' 
+                          ? modelParams[index].toFixed(4) 
+                          : modelParams[index]}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {modelingGraphHtml ? (
+                <View style={styles.graphContainer}>
+                  <Text style={styles.graphTitle}>Process Model Response</Text>
+                  <WebView
+                    originWhitelist={['*']}
+                    source={{ html: modelingGraphHtml }}
+                    style={styles.modelGraph}
+                  />
+                </View>
+              ) : (
+                <Text style={styles.noDataText}>No modeling graph available</Text>
+              )}
+            </View>
+          </View>
+
+          {/* CONTROLLER TUNING */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Controller Tuning Results</Text>
+            </View>
+            <View style={styles.cardBody}>
+              {tuningHistory.length > 0 ? (
+                tuningHistory.map((tuning, index) => (
+                  <View key={index} style={styles.tuningResultContainer}>
+                    <Text style={styles.sectionSubtitle}>
+                      {tuning.controller} Controller ({tuning.criteria} Criteria)
+                    </Text>
+                    
+                    {tuning.parameters && tuning.parameters.length > 0 && (
+                      <View style={styles.parametersContainer}>
+                        {tuning.parameter_names.map((name, idx) => (
+                          <View key={idx} style={styles.parameterRow}>
+                            <Text style={styles.parameterLabel}>{name}:</Text>
+                            <Text style={styles.parameterValue}>
+                              {typeof tuning.parameters[idx] === 'number' 
+                                ? tuning.parameters[idx].toFixed(4) 
+                                : tuning.parameters[idx]}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {tuning.graphHtml ? (
+                      <View style={styles.graphContainer}>
+                        <Text style={styles.graphTitle}>Closed-Loop Response</Text>
+                        <WebView
+                          originWhitelist={['*']}
+                          source={{ html: tuning.graphHtml }}
+                          style={styles.modelGraph}
+                        />
+                      </View>
+                    ) : (
+                      <Text style={styles.noDataText}>No tuning graph available</Text>
+                    )}
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.noDataText}>No tuning results available</Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.navButtonsContainer}>
+            <TouchableOpacity 
+              style={styles.prevButton} 
+              onPress={() => navigation.goBack()}
+            >
+              <Text style={styles.buttonText}>PREVIOUS</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.downloadButton}
+              onPress={handleSavePDF}
+            >
+              <Text style={styles.buttonText}>SAVE REPORT</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+};
 // Create Stack Navigator
 const Stack = createStackNavigator();
 
